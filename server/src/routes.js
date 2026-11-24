@@ -2,6 +2,13 @@ import { badRequest } from './http.js'
 import { toIso } from './db.js'
 
 const MAX_BATCH = 1000
+const MAX_PER_USER = { subscription_providers: 500, subscriptions: 5000 } // plafond total par utilisateur
+
+/** Refuse l'écriture si l'utilisateur dépasserait son plafond (compte prudent : les mises à jour comptent comme des ajouts). */
+async function assertRoom(pool, table, userId, adding) {
+  const [[{ n }]] = await pool.query(`SELECT COUNT(*) AS n FROM ${table} WHERE user_id = ?`, [userId])
+  if (n + adding > MAX_PER_USER[table]) throw badRequest(`Limite de ${MAX_PER_USER[table]} éléments atteinte.`, 'limit_reached')
+}
 
 const asArray = (body) => {
   const items = Array.isArray(body) ? body : body && typeof body === 'object' ? [body] : null
@@ -98,6 +105,7 @@ export function registerRoutes(router, { pool, auth }) {
     const user = await auth.requireUser(req)
     const rows = asArray(body).map(providerRow)
     if (rows.length) {
+      await assertRoom(pool, 'subscription_providers', user.id, rows.length)
       await pool.query(
         `INSERT INTO subscription_providers (user_id, id, name, category, logo, website, color) VALUES ?
          ON DUPLICATE KEY UPDATE name = VALUES(name), category = VALUES(category), logo = VALUES(logo),
@@ -129,6 +137,7 @@ export function registerRoutes(router, { pool, auth }) {
     const user = await auth.requireUser(req)
     const rows = asArray(body).map(subscriptionRow)
     if (rows.length) {
+      await assertRoom(pool, 'subscriptions', user.id, rows.length)
       await pool.query(
         `INSERT INTO subscriptions (user_id, id, provider_id, name, logo, website, category, price, currency, cycle,
            start_date, renewal_date, expiration_date, status, auto_renew, remind_days, notes) VALUES ?

@@ -157,6 +157,13 @@ describe('Subly API', { skip }, () => {
     await call('PUT', '/providers', { token, body: { id: 'z', name: 'Beta', category: 'IA' } })
     assert.deepEqual((await call('GET', '/providers', { token })).data.map((row) => row.name), ['Alpha', 'Beta'])
 
+    // Plafond par utilisateur (500 fournisseurs) : 2 existent déjà, 498 passent, le suivant est refusé.
+    const batch = (from, n) => Array.from({ length: n }, (_, i) => ({ id: `p${from + i}`, name: `P${from + i}`, category: 'IA', logo: '', website: null, color: null }))
+    assert.equal((await call('PUT', '/providers', { token, body: batch(0, 498) })).status, 204)
+    const over = await call('PUT', '/providers', { token, body: batch(498, 1) })
+    assert.equal(over.status, 400)
+    assert.equal(over.data.error, 'limit_reached')
+
     assert.deepEqual((await call('GET', '/settings', { token })).data, { settings: null })
     await call('PUT', '/settings', { token, body: { theme: 'light', reminders_enabled: true } })
     assert.deepEqual((await call('GET', '/settings', { token })).data, { settings: { theme: 'light', reminders_enabled: true } })
